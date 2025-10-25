@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calculadora de Regresión Lineal</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(45deg, #667eea, #764ba2);
+      color: #333;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      color: #ffffff;
+      margin-bottom: 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    .input-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .input-row input {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .btn {
+      padding: 10px 15px;
+      background-color: #667eea;
+      color: #ffffff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 10px;
+    }
+    .btn:hover {
+      background-color: #764ba2;
+    }
+    .results {
+      margin-top: 20px;
+      font-size: 14px;
+    }
+    #chart-canvas {
+      width: 100%;
+      height: 400px;
+      border: 1px solid #ccc;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Calculadora de Regresión Lineal</h1>
+  <div class="container">
+    <div id="points-container">
+      <!-- Se agregan filas de entrada dinámicamente -->
+    </div>
+    <button class="btn" id="add-point">AGREGAR CAMPO</button>
+    <button class="btn" id="calculate">CALCULAR REGRESIÓN</button>
+    <button class="btn" id="clear">LIMPIAR TODO</button>
+    <div class="results" id="results"></div>
+    <canvas id="chart-canvas" width="760" height="400"></canvas>
+  </div>
+  <script>
+    // Elementos del DOM
+    const pointsContainer = document.getElementById('points-container');
+    const addPointBtn = document.getElementById('add-point');
+    const calculateBtn = document.getElementById('calculate');
+    const clearBtn = document.getElementById('clear');
+    const resultsDiv = document.getElementById('results');
+    const canvas = document.getElementById('chart-canvas');
+    const ctx = canvas.getContext('2d');
+
+    /**
+     * Crea una nueva fila de entradas para un par (x, y) y la agrega al contenedor.
+     */
+    function addPointRow() {
+      const row = document.createElement('div');
+      row.className = 'input-row';
+      row.innerHTML = '<input type="number" step="any" placeholder="X"><input type="number" step="any" placeholder="Y">';
+      pointsContainer.appendChild(row);
+    }
+
+    // Evento para agregar una fila nueva
+    addPointBtn.addEventListener('click', () => {
+      addPointRow();
+    });
+
+    // Evento para limpiar todos los campos y resultados
+    clearBtn.addEventListener('click', () => {
+      while (pointsContainer.firstChild) {
+        pointsContainer.removeChild(pointsContainer.firstChild);
+      }
+      addPointRow();
+      resultsDiv.innerHTML = '';
+      clearCanvas();
+    });
+
+    // Evento para calcular la regresión
+    calculateBtn.addEventListener('click', async () => {
+      const rows = pointsContainer.getElementsByClassName('input-row');
+      const points = [];
+      for (const row of rows) {
+        const inputs = row.getElementsByTagName('input');
+        const xVal = parseFloat(inputs[0].value);
+        const yVal = parseFloat(inputs[1].value);
+        if (!isNaN(xVal) && !isNaN(yVal)) {
+          points.push({ x: xVal, y: yVal });
+        }
+      }
+      if (points.length < 2) {
+        alert('Se necesitan al menos 2 puntos válidos.');
+        return;
+      }
+      try {
+        const response = await fetch('/api/calculate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ points: points })
+        });
+        const data = await response.json();
+        if (response.ok) {
+          showResults(data, points);
+        } else {
+          alert(data.error || 'Error en el cálculo');
+        }
+      } catch (err) {
+        alert('Error de conexión con el servidor');
+      }
+    });
+
+    /**
+     * Muestra los resultados de la regresión y dibuja el gráfico.
+     * @param {Object} res Resultados devueltos por el backend
+     * @param {Array} points Lista de puntos ingresados
+     */
+    function showResults(res, points) {
+      resultsDiv.innerHTML = `
+        <p><strong>Ecuación:</strong> y = ${res.m.toFixed(4)}x + ${res.b.toFixed(4)}</p>
+        <p><strong>Pendiente (m):</strong> ${res.m.toFixed(4)}</p>
+        <p><strong>Intersección (b):</strong> ${res.b.toFixed(4)}</p>
+        <p><strong>Correlación (r):</strong> ${res.r.toFixed(4)}</p>
+        <p><strong>R²:</strong> ${res.r2.toFixed(4)}</p>
+      `;
+      drawChart(points, res.m, res.b);
+    }
+
+    /**
+     * Limpia el lienzo.
+     */
+    function clearCanvas() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    /**
+     * Dibuja el gráfico de puntos y la línea de regresión en el canvas.
+     * @param {Array} points Lista de puntos
+     * @param {Number} m Pendiente
+     * @param {Number} b Intersección
+     */
+    function drawChart(points, m, b) {
+      clearCanvas();
+      // Calcular límites de los datos y de la recta
+      let xMin = Math.min(...points.map(p => p.x));
+      let xMax = Math.max(...points.map(p => p.x));
+      let yValues = points.map(p => p.y).concat(points.map(p => m * p.x + b));
+      let yMin = Math.min(...yValues);
+      let yMax = Math.max(...yValues);
+      if (xMin === xMax) {
+        xMin -= 1;
+        xMax += 1;
+      }
+      if (yMin === yMax) {
+        yMin -= 1;
+        yMax += 1;
+      }
+      const padding = 40;
+      const w = canvas.width - padding * 2;
+      const h = canvas.height - padding * 2;
+      // Dibujar ejes
+      ctx.strokeStyle = '#cccccc';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padding, padding);
+      ctx.lineTo(padding, canvas.height - padding);
+      ctx.lineTo(canvas.width - padding, canvas.height - padding);
+      ctx.stroke();
+      // Funciones para escalar valores
+      const mapX = x => padding + ((x - xMin) / (xMax - xMin)) * w;
+      const mapY = y => canvas.height - padding - ((y - yMin) / (yMax - yMin)) * h;
+      // Dibujar puntos
+      ctx.fillStyle = '#f44336';
+      points.forEach(p => {
+        const x = mapX(p.x);
+        const y = mapY(p.y);
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      // Dibujar línea de regresión
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(mapX(xMin), mapY(m * xMin + b));
+      ctx.lineTo(mapX(xMax), mapY(m * xMax + b));
+      ctx.stroke();
+    }
+
+    // Inicializar con una fila por defecto
+    addPointRow();
+  </script>
+</body>
+</html>
